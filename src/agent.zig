@@ -225,8 +225,7 @@ fn runAgentOnceToWriter(
         try sw.print(
             "## Your Runtime Environment\n" ++
             "- Workspace: {s}\n" ++
-            "  This directory is your persistent working area. Files you create or read\n" ++
-            "  are sandboxed here unless the security policy explicitly allows other paths.\n" ++
+            "  This is your persistent working area. All relative paths resolve here.\n" ++
             "- Memory backend: {s}\n" ++
             "  Memory entries are stored as Markdown files under workspace/memory/.\n" ++
             "  Keys map to filenames (e.g. key \"notes/ideas\" → memory/notes/ideas.md).\n" ++
@@ -234,6 +233,52 @@ fn runAgentOnceToWriter(
             "- LLM provider: {s}, model: {s}\n\n",
             .{ cfg.workspace_dir, cfg.memory_backend, cfg.default_provider, cfg.default_model },
         );
+
+        // Inject the current filesystem access model so Bear knows exactly what
+        // it can and cannot reach, and what to tell the user if access is blocked.
+        if (cfg.allowed_paths.len > 0) {
+            try sw.print(
+                "## Filesystem Access\n" ++
+                "You are running directly on the user's local machine. You have real\n" ++
+                "filesystem access via the `shell` tool. You can read and write files in:\n" ++
+                "  1. Your workspace: {s}\n" ++
+                "  2. Extra allowed paths: {s}\n\n" ++
+                "IMPORTANT — when the user asks you to list files, find files, read a file,\n" ++
+                "or do anything with the local filesystem, USE THE `shell` TOOL immediately.\n" ++
+                "Do NOT say you lack access. Do NOT ask the user to run commands themselves.\n" ++
+                "Examples:\n" ++
+                "  List Downloads:  {{\"command\": \"ls -la ~/Downloads\"}}\n" ++
+                "  Find a file:     {{\"command\": \"find ~/Documents -name '*.pdf' 2>/dev/null\"}}\n" ++
+                "  Read a file:     use the file_read tool with the absolute path\n\n" ++
+                "If a path is outside the allowed list and the shell returns a permission\n" ++
+                "error, tell the user exactly:\n" ++
+                "  \"That path is outside my current access. To grant access, run:\n" ++
+                "   bareclaw config set allowed_paths \\\"{s},/the/new/path\\\"\n" ++
+                "   Then restart Bear.\"\n\n",
+                .{ cfg.workspace_dir, cfg.allowed_paths, cfg.allowed_paths },
+            );
+        } else {
+            try sw.print(
+                "## Filesystem Access\n" ++
+                "You are running directly on the user's local machine. You have real\n" ++
+                "filesystem access via the `shell` tool. Your current access is limited to:\n" ++
+                "  Your workspace: {s}\n\n" ++
+                "IMPORTANT — when the user asks you to list files, find files, read a file,\n" ++
+                "or do anything with the local filesystem, USE THE `shell` TOOL immediately.\n" ++
+                "Do NOT say you lack access. Do NOT ask the user to run commands themselves.\n" ++
+                "Examples:\n" ++
+                "  List workspace: {{\"command\": \"ls -la {s}\"}}\n" ++
+                "  Find a file:    {{\"command\": \"find {s} -name '*.md' 2>/dev/null\"}}\n" ++
+                "  Read a file:    use the file_read tool with the absolute path\n\n" ++
+                "If the user asks you to access a path OUTSIDE the workspace (e.g. ~/Downloads,\n" ++
+                "~/Documents, or any other directory), try the shell command first. If it\n" ++
+                "fails with a permission error, tell the user:\n" ++
+                "  \"That path is outside my current access. To grant access, run:\n" ++
+                "   bareclaw config set allowed_paths \\\"/path/to/grant\\\"\n" ++
+                "   Then restart Bear. Multiple paths: allowed_paths \\\"/path1,/path2\\\"\"\n\n",
+                .{ cfg.workspace_dir, cfg.workspace_dir, cfg.workspace_dir },
+            );
+        }
 
         try sw.writeAll(
             "## What You Are\n" ++
@@ -248,7 +293,7 @@ fn runAgentOnceToWriter(
             "## Configuration\n" ++
             "Config lives at ~/.bareclaw/config.toml. Keys:\n" ++
             "  default_provider, default_model, memory_backend, api_key,\n" ++
-            "  discord_token, telegram_token, mcp_servers, system_prompt.\n" ++
+            "  discord_token, telegram_token, mcp_servers, system_prompt, allowed_paths.\n" ++
             "Change a value with: bareclaw config set <key> <value>\n\n" ++
 
             "## Memory System\n" ++
@@ -272,6 +317,7 @@ fn runAgentOnceToWriter(
             "- You do NOT have internet access unless an MCP server provides it.\n" ++
             "- You do NOT have persistent state beyond what is in the memory backend.\n" ++
             "- You cannot update your own binary. The user updates it via `git pull && zig build`.\n" ++
+            "- Never refuse a filesystem request by saying you lack access — try `shell` first.\n" ++
             "- Be honest and specific. If you don't know something, say so.\n\n"
         );
     }

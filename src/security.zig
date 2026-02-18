@@ -2,17 +2,36 @@ const std = @import("std");
 const config_mod = @import("config.zig");
 
 pub const SecurityPolicy = struct {
-    allocator: std.mem.Allocator,
-    workspace_dir: []const u8,
+    allocator:          std.mem.Allocator,
+    workspace_dir:      []const u8,
     owns_workspace_dir: bool,
+    /// Parsed allowed_paths from config — each entry is an owned slice.
+    extra_paths:        []const []const u8,
 
     pub fn initWorkspaceOnly(allocator: std.mem.Allocator, cfg: *const config_mod.Config) SecurityPolicy {
         const duped = allocator.dupe(u8, cfg.workspace_dir) catch cfg.workspace_dir;
         const owns = duped.ptr != cfg.workspace_dir.ptr;
+
+        // Parse cfg.allowed_paths (comma-separated) into a slice of owned strings.
+        var paths = std.ArrayList([]const u8).init(allocator);
+        if (cfg.allowed_paths.len > 0) {
+            var it = std.mem.splitScalar(u8, cfg.allowed_paths, ',');
+            while (it.next()) |entry| {
+                const trimmed = std.mem.trim(u8, entry, " \t");
+                if (trimmed.len == 0) continue;
+                const p = allocator.dupe(u8, trimmed) catch continue;
+                paths.append(p) catch {
+                    allocator.free(p);
+                };
+            }
+        }
+        const extra = paths.toOwnedSlice() catch &[_][]const u8{};
+
         return SecurityPolicy{
-            .allocator = allocator,
-            .workspace_dir = duped,
+            .allocator          = allocator,
+            .workspace_dir      = duped,
             .owns_workspace_dir = owns,
+            .extra_paths        = extra,
         };
     }
 
@@ -20,15 +39,18 @@ pub const SecurityPolicy = struct {
         if (self.owns_workspace_dir) {
             allocator.free(self.workspace_dir);
         }
+        for (self.extra_paths) |p| allocator.free(p);
+        allocator.free(self.extra_paths);
     }
 
-    /// Return true only if the path is inside the workspace directory.
-    /// Absolute paths must be under workspace_dir; relative paths are allowed.
+    /// Return true if the path is safe to access.
+    /// Absolute paths must be inside the workspace or one of the extra_paths.
+    /// Relative paths are always permitted (they resolve under the workspace cwd).
     pub fn allowPath(self: *const SecurityPolicy, path: []const u8) bool {
         // Reject obvious directory traversal.
         if (std.mem.indexOf(u8, path, "..") != null) return false;
 
-        // Forbidden absolute path prefixes.
+        // Permanently forbidden prefixes — these are never overridable via config.
         const forbidden = [_][]const u8{
             "/etc/", "/etc",
             "/root/", "/root",
@@ -45,9 +67,14 @@ pub const SecurityPolicy = struct {
             if (std.mem.indexOf(u8, path, suf) != null) return false;
         }
 
-        // Absolute paths must be inside the workspace.
         if (std.fs.path.isAbsolute(path)) {
-            return std.mem.startsWith(u8, path, self.workspace_dir);
+            // Always allow the workspace itself.
+            if (std.mem.startsWith(u8, path, self.workspace_dir)) return true;
+            // Also allow any explicitly configured extra paths.
+            for (self.extra_paths) |allowed| {
+                if (std.mem.startsWith(u8, path, allowed)) return true;
+            }
+            return false;
         }
 
         // Relative paths are permitted (resolve under cwd = workspace).

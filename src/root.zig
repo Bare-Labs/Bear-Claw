@@ -181,6 +181,7 @@ test "buildCoreTools: all expected tools are present" {
         .telegram_token     = "",
         .mcp_servers        = "",
         .system_prompt      = "",
+        .allowed_paths      = "",
     };
 
     var policy = security_mod.SecurityPolicy.initWorkspaceOnly(std.testing.allocator, &cfg);

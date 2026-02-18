@@ -31,6 +31,13 @@ pub const Config = struct {
     /// Set via `bareclaw config set system_prompt "..."` or in config.toml.
     system_prompt: []const u8,
 
+    /// Comma-separated list of additional absolute paths Bear may read/write
+    /// beyond the workspace. The workspace is always allowed.
+    /// Example: "/Users/joe/Downloads,/Users/joe/Documents"
+    /// Set via `bareclaw config set allowed_paths "/path1,/path2"`
+    /// Bear will tell users this value when asked about its access.
+    allowed_paths: []const u8,
+
     pub fn deinit(self: *Config, allocator: std.mem.Allocator) void {
         allocator.free(self.workspace_dir);
         allocator.free(self.config_path);
@@ -44,6 +51,7 @@ pub const Config = struct {
         allocator.free(self.telegram_token);
         allocator.free(self.mcp_servers);
         allocator.free(self.system_prompt);
+        allocator.free(self.allowed_paths);
         self.* = undefined;
     }
 
@@ -67,7 +75,11 @@ pub const Config = struct {
             "mcp_servers = \"{s}\"\n" ++
             "\n" ++
             "# Custom system prompt (leave empty to use built-in default)\n" ++
-            "system_prompt = \"{s}\"\n",
+            "system_prompt = \"{s}\"\n" ++
+            "\n" ++
+            "# Extra paths Bear can read/write beyond the workspace (comma-separated)\n" ++
+            "# Example: allowed_paths = \"/Users/joe/Downloads,/Users/joe/Documents\"\n" ++
+            "allowed_paths = \"{s}\"\n",
             .{
                 self.default_provider, self.default_model,
                 self.memory_backend,   self.fallback_providers,
@@ -75,6 +87,7 @@ pub const Config = struct {
                 self.discord_token,    self.discord_webhook,  self.telegram_token,
                 self.mcp_servers,
                 self.system_prompt,
+                self.allowed_paths,
             },
         );
     }
@@ -85,7 +98,7 @@ pub const Config = struct {
         const known_keys = [_][]const u8{
             "default_provider", "default_model", "memory_backend",
             "fallback_providers", "api_key", "discord_token", "discord_webhook", "telegram_token",
-            "mcp_servers", "system_prompt",
+            "mcp_servers", "system_prompt", "allowed_paths",
         };
         var found = false;
         for (known_keys) |k| {
@@ -94,7 +107,7 @@ pub const Config = struct {
         if (!found) {
             return try std.fmt.allocPrint(
                 allocator,
-                "Unknown config key: \"{s}\"\nValid keys: default_provider, default_model, memory_backend, fallback_providers, api_key, discord_token, discord_webhook, telegram_token, mcp_servers, system_prompt",
+                "Unknown config key: \"{s}\"\nValid keys: default_provider, default_model, memory_backend, fallback_providers, api_key, discord_token, discord_webhook, telegram_token, mcp_servers, system_prompt, allowed_paths",
                 .{key},
             );
         }
@@ -131,6 +144,9 @@ pub const Config = struct {
         } else if (std.mem.eql(u8, key, "system_prompt")) {
             allocator.free(self.system_prompt);
             self.system_prompt = duped;
+        } else if (std.mem.eql(u8, key, "allowed_paths")) {
+            allocator.free(self.allowed_paths);
+            self.allowed_paths = duped;
         } else {
             allocator.free(duped);
         }
@@ -169,6 +185,7 @@ pub fn loadOrInit(allocator: std.mem.Allocator) !Config {
         .telegram_token     = try allocator.dupe(u8, ""),
         .mcp_servers        = try allocator.dupe(u8, ""),
         .system_prompt      = try allocator.dupe(u8, ""),
+        .allowed_paths      = try allocator.dupe(u8, ""),
     };
 
     // Best-effort: parse existing config.toml for a few keys.
@@ -241,6 +258,11 @@ fn parseSimpleToml(cfg: *Config, contents: []u8, allocator: std.mem.Allocator) !
                 allocator.free(cfg.system_prompt);
                 cfg.system_prompt = try allocator.dupe(u8, val);
             }
+        } else if (std.mem.startsWith(u8, line, "allowed_paths")) {
+            if (parseValue(line)) |val| {
+                allocator.free(cfg.allowed_paths);
+                cfg.allowed_paths = try allocator.dupe(u8, val);
+            }
         }
     }
 }
@@ -261,6 +283,9 @@ pub fn quickOnboard(cfg: *Config, allocator: std.mem.Allocator, writer: anytype)
     try writer.print("Default provider: {s}\n", .{cfg.default_provider});
     try writer.print("Default model:    {s}\n", .{cfg.default_model});
     try writer.print("Memory backend:   {s}\n", .{cfg.memory_backend});
+    if (cfg.allowed_paths.len > 0) {
+        try writer.print("Allowed paths:    {s}\n", .{cfg.allowed_paths});
+    }
 }
 
 /// A parsed MCP server definition.
@@ -324,4 +349,3 @@ pub fn parseMcpServers(cfg: *const Config, allocator: std.mem.Allocator) ![]McpS
 
     return list.toOwnedSlice();
 }
-
