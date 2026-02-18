@@ -222,9 +222,11 @@ fn runAgentOnceToWriter(
             "CRITICAL RULES (always follow these, no exceptions):\n" ++
             "1. You HAVE real filesystem access via the `shell` tool. NEVER say you lack access.\n" ++
             "   When asked about files or directories: use the shell tool. Always. No excuses.\n" ++
-            "2. To use a tool: output ONLY this JSON, nothing else, no prose, no fences:\n" ++
+            "2. When a tool exists that can fulfill the user's request, USE IT — do not explain\n" ++
+            "   how the user could run the command themselves. Act, don't instruct.\n" ++
+            "3. To use a tool: output ONLY this JSON, nothing else, no prose, no fences:\n" ++
             "   {\"tool_calls\":[{\"function\":\"shell\",\"arguments\":{\"command\":\"ls ~/Downloads\"}}]}\n" ++
-            "3. After getting tool results, give a plain text answer. No more JSON.\n\n"
+            "4. After getting tool results, give a plain text answer. No more JSON.\n\n"
         );
 
         try sw.print(
