@@ -53,7 +53,7 @@ See [`docs/mcp-development.md`](docs/mcp-development.md) for the full ADHD playb
 |---|---|
 | **Providers** | Anthropic (Claude), OpenAI, OpenAI-compatible, Ollama, OpenRouter, Echo (offline) |
 | **Routing** | Fallback chain — tries providers in order, returns first success |
-| **Tools** | shell, file_read, file_write, memory_store, memory_recall, memory_forget, http_request, git_operations |
+| **Tools** | shell, file_read, file_write, memory_store, memory_recall, memory_forget, memory_search, planner_execute, http_request, git_operations |
 | **Agent loop** | Multi-round tool-calling with configurable max rounds (default 8) |
 | **Channels** | CLI (single-turn & interactive loop), Discord (WebSocket Gateway), Telegram (long-polling) |
 | **Memory** | Markdown file-per-key store under `~/.bareclaw/workspace/memory/` |
@@ -259,6 +259,7 @@ The agent can call any of these tools during a conversation. Tools are executed 
 | `memory_store` | Persist a value to the memory backend | `key`, `content` |
 | `memory_recall` | Retrieve a stored value | `key` |
 | `memory_forget` | Delete a stored memory entry | `key` |
+| `memory_search` | Rank memory entries by relevance | `query`, `limit` |
 | `http_request` | Make a GET or POST HTTP request | `url`, `method`, `body` |
 | `git_operations` | Run git subcommands in a workspace path | `op`, `path`, `args` |
 
@@ -334,6 +335,8 @@ and `profile_set` tools, and the agent now incorporates that profile into the
 system prompt when present. Planner runs also store reflective summaries under
 `reflection/<timestamp>` and refresh `reflection/latest`, which is loaded back
 into future prompts as lightweight guidance.
+`memory_search` ranks stored entries by relevance so transcripts, reflections,
+and notes remain usable as the workspace grows.
 
 ```bash
 # View your memory files directly

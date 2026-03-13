@@ -410,6 +410,48 @@ fn toolMemoryForget(ctx: *ToolContext, args_json: []const u8) !ToolResult {
     return ToolResult.owned(true, msg);
 }
 
+fn toolMemorySearch(ctx: *ToolContext, args_json: []const u8) !ToolResult {
+    const parsed = std.json.parseFromSlice(std.json.Value, ctx.allocator, args_json, .{}) catch {
+        return ToolResult.literal(false, "invalid JSON in memory_search args");
+    };
+    defer parsed.deinit();
+
+    const query = getString(parsed.value, "query") orelse {
+        return ToolResult.literal(false, "memory_search: missing 'query' argument");
+    };
+
+    var limit: usize = 5;
+    if (parsed.value.object.get("limit")) |limit_val| {
+        limit = switch (limit_val) {
+            .integer => |v| @intCast(@max(@as(i64, 1), @min(v, 10))),
+            else => 5,
+        };
+    }
+
+    ctx.policy.auditLog("memory_search", query) catch {};
+
+    const results = try ctx.memory.search(query, limit);
+    defer {
+        for (results) |*result| @constCast(result).deinit(ctx.allocator);
+        ctx.allocator.free(results);
+    }
+
+    if (results.len == 0) {
+        return ToolResult.owned(true, try ctx.allocator.dupe(u8, "(no relevant memory entries found)"));
+    }
+
+    var out = std.ArrayList(u8).init(ctx.allocator);
+    errdefer out.deinit();
+    for (results, 0..) |result, idx| {
+        try out.writer().print(
+            "{d}. {s} (score {d:.2})\n{s}\n",
+            .{ idx + 1, result.key, result.score, result.preview },
+        );
+    }
+
+    return ToolResult.owned(true, try out.toOwnedSlice());
+}
+
 // ── tool: profile_get / profile_set ─────────────────────────────────────────
 
 fn toolProfileGet(ctx: *ToolContext, args_json: []const u8) !ToolResult {
@@ -1140,6 +1182,7 @@ pub fn buildCoreTools(
     try list.append(Tool{ .name = "memory_store", .description = "Store a value in memory by key", .executeFn = toolMemoryStore });
     try list.append(Tool{ .name = "memory_recall", .description = "Recall a stored memory entry by key", .executeFn = toolMemoryRecall });
     try list.append(Tool{ .name = "memory_forget", .description = "Delete a stored memory entry by key", .executeFn = toolMemoryForget });
+    try list.append(Tool{ .name = "memory_search", .description = "Search memory entries by relevance. Args: {\"query\":\"...\",\"limit\":5}", .executeFn = toolMemorySearch });
     try list.append(Tool{ .name = "profile_get", .description = "Read a user profile value by key", .executeFn = toolProfileGet });
     try list.append(Tool{ .name = "profile_set", .description = "Set a user profile value by key", .executeFn = toolProfileSet });
     try list.append(Tool{ .name = "planner_execute", .description = "Create a multi-step plan, execute tools, and store a reflective summary. Args: {\"goal\":\"...\"}", .executeFn = toolPlannerExecute });

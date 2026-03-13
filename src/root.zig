@@ -382,6 +382,54 @@ test "profile set and get round-trip a value" {
     try std.testing.expectEqualStrings("formal", value.?);
 }
 
+test "memory search ranks relevant entries first" {
+    const memory_mod = @import("memory.zig");
+    const config_mod = @import("config.zig");
+
+    var workspace_buf: [96]u8 = undefined;
+    const workspace = try std.fmt.bufPrint(
+        &workspace_buf,
+        "zig-cache/test-memory-search-{d}",
+        .{std.crypto.random.int(u64)},
+    );
+    defer std.fs.cwd().deleteTree(workspace) catch {};
+    try std.fs.cwd().makePath(workspace);
+
+    const cfg = config_mod.Config{
+        .workspace_dir = workspace,
+        .config_path = "zig-cache/test-memory-search-config.toml",
+        .default_provider = "echo",
+        .default_model = "test-model",
+        .memory_backend = "markdown",
+        .fallback_providers = "",
+        .api_key = "",
+        .discord_token = "",
+        .discord_webhook = "",
+        .discord_notify_channel = "",
+        .telegram_token = "",
+        .mcp_servers = "",
+        .system_prompt = "",
+        .allowed_paths = "",
+    };
+
+    var mem = try memory_mod.createMemoryBackend(std.testing.allocator, &cfg);
+    defer mem.deinit();
+
+    try mem.store("notes/market", "market market signal trend breakout");
+    try mem.store("journal/cooking", "recipe ingredients oven dinner");
+    try mem.store("notes/mixed", "market dinner overlap");
+
+    const results = try mem.search("market signal", 3);
+    defer {
+        for (results) |*result| @constCast(result).deinit(std.testing.allocator);
+        std.testing.allocator.free(results);
+    }
+
+    try std.testing.expect(results.len >= 2);
+    try std.testing.expectEqualStrings("notes/market", results[0].key);
+    try std.testing.expect(results[0].score >= results[1].score);
+}
+
 test "planner stores final reflection and returns execution summary" {
     const planner_mod = @import("planner.zig");
     const memory_mod = @import("memory.zig");
@@ -535,13 +583,13 @@ test "buildCoreTools: all expected tools are present" {
     defer tools_mod.freeTools(std.testing.allocator, tool_list);
 
     const expected_tools = [_][]const u8{
-        "shell",            "file_read",            "file_write",
-        "memory_store",     "memory_recall",        "memory_forget",
-        "profile_get",      "profile_set",          "planner_execute",
-        "memory_list_keys", "memory_delete_prefix", "http_request",
-        "git_operations",   "agent_status",         "audit_log_read",
-        "discord_notify",   "cron_list",            "cron_add_prompt",
-        "cron_remove",      "cron_run",
+        "shell",           "file_read",        "file_write",
+        "memory_store",    "memory_recall",    "memory_forget",
+        "memory_search",   "profile_get",      "profile_set",
+        "planner_execute", "memory_list_keys", "memory_delete_prefix",
+        "http_request",    "git_operations",   "agent_status",
+        "audit_log_read",  "discord_notify",   "cron_list",
+        "cron_add_prompt", "cron_remove",      "cron_run",
     };
 
     for (expected_tools) |expected| {

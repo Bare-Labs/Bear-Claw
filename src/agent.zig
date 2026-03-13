@@ -468,6 +468,7 @@ fn runAgentOnceToWriter(
             "  memory_store key value   — save information under a key\n" ++
             "  memory_recall key        — retrieve stored information\n" ++
             "  memory_forget key        — delete a single entry\n" ++
+            "  memory_search query      — rank memory entries by relevance\n" ++
             "  memory_list_keys         — list all stored keys\n" ++
             "  memory_delete_prefix     — bulk-delete keys by prefix\n" ++
             "Session transcripts are automatically stored under session/YYYY-MM-DDTHH:MM.\n" ++
