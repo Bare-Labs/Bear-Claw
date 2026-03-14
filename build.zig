@@ -14,6 +14,9 @@ pub fn build(b: *std.Build) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
+    const prefer_static_system_libs = b.option(bool, "prefer-static-system-libs", "Prefer static linking for system libraries") orelse false;
+    const require_static_system_libs = b.option(bool, "require-static-system-libs", "Require static linking for system libraries") orelse false;
+    const static_executable = b.option(bool, "static-executable", "Build the bareclaw executable as a static binary") orelse false;
 
     // This creates a "module", which represents a collection of source files alongside
     // some compilation options, such as optimization mode and linked system libraries.
@@ -52,6 +55,7 @@ pub fn build(b: *std.Build) void {
         .name = "bareclaw",
         .root_module = lib_mod,
     });
+    configureSystemLibrarySearchPaths(lib, prefer_static_system_libs);
 
     // This declares intent for the library to be installed into the standard
     // location when the user invokes the "install" step (the default step when
@@ -63,12 +67,14 @@ pub fn build(b: *std.Build) void {
     const exe = b.addExecutable(.{
         .name = "bareclaw",
         .root_module = exe_mod,
+        .linkage = if (static_executable) .static else null,
     });
+    configureSystemLibrarySearchPaths(exe, prefer_static_system_libs);
 
     // Link system libsqlite3 for the SQLite memory backend.
-    exe.linkSystemLibrary("sqlite3");
+    linkSystemLibrary(exe, "sqlite3", prefer_static_system_libs, require_static_system_libs);
     exe.linkLibC();
-    lib.linkSystemLibrary("sqlite3");
+    linkSystemLibrary(lib, "sqlite3", prefer_static_system_libs, require_static_system_libs);
     lib.linkLibC();
 
     // This declares intent for the executable to be installed into the
@@ -104,7 +110,8 @@ pub fn build(b: *std.Build) void {
     const lib_unit_tests = b.addTest(.{
         .root_module = lib_mod,
     });
-    lib_unit_tests.linkSystemLibrary("sqlite3");
+    configureSystemLibrarySearchPaths(lib_unit_tests, prefer_static_system_libs);
+    linkSystemLibrary(lib_unit_tests, "sqlite3", prefer_static_system_libs, require_static_system_libs);
     lib_unit_tests.linkLibC();
 
     const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
@@ -112,7 +119,8 @@ pub fn build(b: *std.Build) void {
     const exe_unit_tests = b.addTest(.{
         .root_module = exe_mod,
     });
-    exe_unit_tests.linkSystemLibrary("sqlite3");
+    configureSystemLibrarySearchPaths(exe_unit_tests, prefer_static_system_libs);
+    linkSystemLibrary(exe_unit_tests, "sqlite3", prefer_static_system_libs, require_static_system_libs);
     exe_unit_tests.linkLibC();
 
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
@@ -123,4 +131,31 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_lib_unit_tests.step);
     test_step.dependOn(&run_exe_unit_tests.step);
+}
+
+fn linkSystemLibrary(
+    compile: *std.Build.Step.Compile,
+    name: []const u8,
+    prefer_static_system_libs: bool,
+    require_static_system_libs: bool,
+) void {
+    compile.linkSystemLibrary2(name, .{
+        .use_pkg_config = .no,
+        .preferred_link_mode = if (prefer_static_system_libs) .static else .dynamic,
+        .search_strategy = if (prefer_static_system_libs)
+            (if (require_static_system_libs) .no_fallback else .mode_first)
+        else
+            .paths_first,
+    });
+}
+
+fn configureSystemLibrarySearchPaths(
+    compile: *std.Build.Step.Compile,
+    prefer_static_system_libs: bool,
+) void {
+    if (!prefer_static_system_libs) return;
+    compile.addSystemIncludePath(.{ .cwd_relative = "/usr/include" });
+    compile.addLibraryPath(.{ .cwd_relative = "/lib" });
+    compile.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
+    compile.addLibraryPath(.{ .cwd_relative = "/usr/local/lib" });
 }
