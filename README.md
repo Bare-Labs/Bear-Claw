@@ -530,6 +530,50 @@ Pairing payload format:
 }
 ```
 
+### Linux `systemd --user` service
+
+For a manual host-native install on Linux, the simplest durable path is a
+user-scoped `systemd` unit plus lingering:
+
+```bash
+sudo loginctl enable-linger "$USER"
+mkdir -p "$HOME/.local/bin" "$HOME/.config/systemd/user"
+cp ./zig-out/bin/bareclaw "$HOME/.local/bin/bareclaw"
+
+cat > "$HOME/.config/systemd/user/bearclaw.service" <<'EOF'
+[Unit]
+Description=BearClaw daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=HOME=%h
+ExecStart=%h/.local/bin/bareclaw daemon
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+EOF
+
+systemctl --user daemon-reload
+systemctl --user enable --now bearclaw.service
+systemctl --user status bearclaw.service
+journalctl --user -u bearclaw.service -f
+```
+
+On the `blink` homelab deployment, the staged unit file and installer live at:
+
+- `/home/admin/barelabs/runtime/blink-homelab/systemd-user/bearclaw.service`
+- `/home/admin/barelabs/runtime/blink-homelab/install_user_systemd_units.sh`
+
+After enabling lingering for `admin`, install the staged units with:
+
+```bash
+/home/admin/barelabs/runtime/blink-homelab/install_user_systemd_units.sh enable
+```
+
 Paste this payload (or the `tardi1:` code) into the iOS app Pairing section. The app pins `cert_sha256` and uses it for TLS trust.
 
 ---
@@ -575,7 +619,8 @@ The Anthropic `tool_use` block format is translated to the internal OpenAI `tool
 - [ ] Structured JSON logging / observability
 - [ ] Per-provider cost tracking
 - [ ] Hardware peripheral I/O (GPIO, serial bridge for microcontrollers)
-- [ ] launchd / systemd service files for daemon mode
+- [x] systemd user service units for daemon mode
+- [ ] launchd service files for daemon mode
 - [ ] Multi-turn conversation history (beyond single-turn tool context)
 - [ ] Vector memory backend
 
